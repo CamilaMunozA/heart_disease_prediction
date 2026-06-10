@@ -1,0 +1,19 @@
+
+# Librerías que Render instala al desplegar. Las lee automáticamente.
+langchain
+langchain-core
+langchain-groq
+langchain-community
+fastapi
+uvicorn
+redis
+pydantic
+# IMPORTANTE: fija scikit-learn a la MISMA versión que usaste en Colab.
+# Ejecuta en una celda:  import sklearn; print(sklearn.__version__)
+# y escribe aquí, por ejemplo:  scikit-learn==1.5.2
+# Si la versión difiere, cargar los .joblib puede fallar o dar warnings.
+scikit-learn
+shap
+joblib
+numpy
+pandas
