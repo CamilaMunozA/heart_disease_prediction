@@ -1,4 +1,5 @@
 # 🫀 Asistente Cardiológico — Predicción de Enfermedad Cardíaca con IA
+https://cardio-ia.netlify.app/
 
 Modelo de Machine Learning + asistente conversacional que estima el riesgo de enfermedad cardíaca a partir de variables clínicas, explica **por qué** con SHAP, entrega una **probabilidad calibrada** y se despliega como **API web**.
 
