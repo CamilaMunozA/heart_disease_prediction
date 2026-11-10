@@ -139,14 +139,30 @@ def predecir_enfermedad_cardiaca(
 
 # ── LLM + agente con tool-calling ─────────────────────────────────────
 # GROQ_API_KEY se lee automáticamente de las variables de entorno (Render).
-modelo = ChatGroq(
-    model="llama-3.3-70b-versatile",
-    temperature=0.2,
-    max_tokens=1024,
-)
+# El modelo se puede cambiar con la variable GROQ_MODEL sin tocar el código
+# (Groq retira modelos con frecuencia: https://console.groq.com/docs/deprecations).
+# llama-3.3-70b-versatile se retiró del plan gratuito el 16/08/2026;
+# Groq recomienda openai/gpt-oss-120b como reemplazo (soporta tool calling).
 tools = [predecir_enfermedad_cardiaca]
 tools_by_name = {t.name: t for t in tools}
-modelo_con_tools = modelo.bind_tools(tools)
+_modelo_con_tools = None
+
+
+def obtener_modelo():
+    """Crea el cliente del LLM la primera vez que se necesita (no al importar).
+    Así, si falta GROQ_API_KEY, solo falla el chat y /predecir sigue funcionando."""
+    global _modelo_con_tools
+    if _modelo_con_tools is None:
+        modelo = ChatGroq(
+            model=os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b"),
+            temperature=0.2,
+            # gpt-oss es un modelo de razonamiento: los tokens de razonamiento
+            # cuentan dentro de max_tokens, por eso el margen es mayor (antes 1024).
+            max_tokens=2048,
+            reasoning_effort="low",   # respuestas rápidas; el cálculo lo hace la tool
+        )
+        _modelo_con_tools = modelo.bind_tools(tools)
+    return _modelo_con_tools
 
 SYSTEM = """Eres un asistente médico especializado en cardiología. Ayudas a interpretar
 predicciones de riesgo cardíaco y a entender exámenes relacionados.
@@ -187,6 +203,7 @@ def chatear(session_id: str, mensaje: str) -> dict:
     mensajes.extend(list(historial.messages)[-VENTANA:])
     mensajes.append(HumanMessage(content=mensaje))
 
+    modelo_con_tools = obtener_modelo()
     for _ in range(MAX_ITER):
         respuesta = modelo_con_tools.invoke(mensajes)
         mensajes.append(respuesta)
@@ -203,8 +220,17 @@ def chatear(session_id: str, mensaje: str) -> dict:
 
         # Ejecutar cada tool pedida (no se persiste en Redis)
         for call in respuesta.tool_calls:
-            tool_fn = tools_by_name[call["name"]]
-            resultado = tool_fn.invoke(call["args"])
+            tool_fn = tools_by_name.get(call["name"])
+            if tool_fn is None:
+                # El LLM pidió una herramienta que no existe: se lo decimos
+                # en vez de romper la petición, para que corrija en el siguiente ciclo.
+                resultado = (f"Error: la herramienta '{call['name']}' no existe. "
+                             f"Disponibles: {', '.join(tools_by_name)}.")
+            else:
+                try:
+                    resultado = tool_fn.invoke(call["args"])
+                except Exception as e:   # p. ej. argumentos faltantes o de tipo incorrecto
+                    resultado = f"Error al ejecutar la herramienta: {e}. Revisa los datos del paciente."
             mensajes.append(ToolMessage(content=str(resultado), tool_call_id=call["id"]))
 
     salida = "No pude completar la respuesta en el número máximo de pasos."
